@@ -4,13 +4,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Все значения берутся из .env (шаблон — .env.example), дефолтов в коде нет."""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    app_env: str = "dev"
-    database_url: str = "postgresql+psycopg://shag:shag@localhost:5544/shag"
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:4173"]
-    secret_key: str = "change-me"
-    access_token_expire_minutes: int = 60
+    app_env: str
+    database_url: str
+    cors_origins: list[str]
+    secret_key: str
+    access_token_expire_minutes: int
 
 
 @lru_cache
