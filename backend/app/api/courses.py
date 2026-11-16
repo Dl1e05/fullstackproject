@@ -4,9 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
+from app.api.deps import OptionalUser
 from app.db import get_db
 from app.models.course import Course, Lesson
 from app.models.exercise import Exercise
+from app.models.user import User
 from app.schemas.course import CourseDetailRead, CourseRead, LessonPreview
 from app.schemas.topic import TopicRead
 
@@ -41,7 +43,13 @@ def _format_minutes(total: int) -> str:
     return f"{hours} ч {minutes} мин" if minutes else f"{hours} ч"
 
 
-def _serialize_course(course: Course, lessons_count: int, minutes: int) -> CourseRead:
+def _purchased_ids(user: User | None) -> set[str]:
+    return {purchase.course_id for purchase in user.purchases} if user else set()
+
+
+def _serialize_course(
+    course: Course, lessons_count: int, minutes: int, purchased_ids: set[str]
+) -> CourseRead:
     return CourseRead(
         id=course.id,
         topic_id=course.topic_id,
@@ -56,13 +64,14 @@ def _serialize_course(course: Course, lessons_count: int, minutes: int) -> Cours
         lessons_count=lessons_count,
         minutes=minutes,
         duration=_format_minutes(minutes),
-        has_access=course.price == 0,
+        has_access=course.price == 0 or course.id in purchased_ids,
     )
 
 
 @router.get("", response_model=list[CourseRead], summary="Список курсов")
 def list_courses(
     db: Annotated[Session, Depends(get_db)],
+    user: OptionalUser,
     q: Annotated[str, Query(description="Поиск по названию, подзаголовку и названиям уроков")] = "",
     topic: Annotated[str, Query(description="Идентификатор темы")] = "",
     price: Annotated[Literal["", "free", "paid"], Query(description="Фильтр по стоимости")] = "",
@@ -86,8 +95,9 @@ def list_courses(
     if popular is not None:
         statement = statement.where(Course.popular == popular)
 
+    purchased_ids = _purchased_ids(user)
     return [
-        _serialize_course(course, lessons_count, minutes)
+        _serialize_course(course, lessons_count, minutes, purchased_ids)
         for course, lessons_count, minutes in db.execute(statement)
     ]
 
@@ -98,13 +108,15 @@ def list_courses(
     summary="Описание и программа курса",
     responses={404: {"description": "Курс не найден"}},
 )
-def get_course(course_id: str, db: Annotated[Session, Depends(get_db)]) -> CourseDetailRead:
+def get_course(
+    course_id: str, db: Annotated[Session, Depends(get_db)], user: OptionalUser
+) -> CourseDetailRead:
     row = db.execute(_course_query().where(Course.id == course_id)).first()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Курс не найден")
 
     course, lessons_count, minutes = row
-    data = _serialize_course(course, lessons_count, minutes)
+    data = _serialize_course(course, lessons_count, minutes, _purchased_ids(user))
     lessons = db.execute(
         select(Lesson.id, Lesson.order, Lesson.title, Lesson.type, Lesson.minutes)
         .where(Lesson.course_id == course_id)
