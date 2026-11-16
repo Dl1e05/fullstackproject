@@ -7,6 +7,8 @@ from pwdlib.hashers.argon2 import Argon2Hasher
 
 from app.config import get_settings
 
+JWT_ALGORITHM = "HS256"
+
 _password_hash = PasswordHash((Argon2Hasher(),))
 
 # При неизвестной почте пароль сверяется с этим хешем, чтобы по времени ответа
@@ -30,7 +32,7 @@ def create_access_token(user_id: int) -> str:
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
     }
-    return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+    return jwt.encode(payload, settings.secret_key, algorithm=JWT_ALGORITHM)
 
 
 def decode_access_token(token: str) -> int | None:
@@ -39,7 +41,7 @@ def decode_access_token(token: str) -> int | None:
         payload = jwt.decode(
             token,
             settings.secret_key,
-            algorithms=[settings.jwt_algorithm],
+            algorithms=[JWT_ALGORITHM],
             options={"require": ["exp", "sub"]},
         )
         return int(payload["sub"])

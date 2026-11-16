@@ -8,14 +8,15 @@ DEFAULT_SECRET_KEY = "change-me"
 
 
 class Settings(BaseSettings):
+    """Все значения берутся из .env (шаблон — .env.example), дефолтов в коде нет."""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
 
-    app_env: str = "dev"
-    database_url: str = "postgresql+psycopg://shag:shag@localhost:5544/shag"
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:4173"]
-    secret_key: str = DEFAULT_SECRET_KEY
-    jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60
+    app_env: str
+    database_url: str
+    cors_origins: list[str]
+    secret_key: str
+    access_token_expire_minutes: int
 
     @model_validator(mode="after")
     def _forbid_default_secret_outside_dev(self) -> Self:
