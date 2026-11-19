@@ -4,13 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps import OptionalUser
+from app.api.deps import UNAUTHORIZED_RESPONSE, CurrentUser, OptionalUser
 from app.db import get_db
 from app.models.course import Course, Lesson
 from app.models.exercise import Exercise
-from app.models.user import User
+from app.models.user import Purchase, User
 from app.schemas.course import CourseDetailRead, CourseRead, LessonPreview
 from app.schemas.topic import TopicRead
+from app.schemas.user import UserRead
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
@@ -140,3 +141,29 @@ def get_course(
         ],
         quiz_count=quiz_count or 0,
     )
+
+
+@router.post(
+    "/{course_id}/purchase",
+    response_model=UserRead,
+    summary="Купить курс (демо-оплата)",
+    responses={
+        **UNAUTHORIZED_RESPONSE,
+        400: {"description": "Курс бесплатный"},
+        404: {"description": "Курс не найден"},
+    },
+)
+def purchase_course(
+    course_id: str, user: CurrentUser, db: Annotated[Session, Depends(get_db)]
+) -> UserRead:
+    course = db.get(Course, course_id)
+    if course is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Курс не найден")
+    if course.price == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Этот курс бесплатный")
+
+    # Деньги не списываются: курс просто открывается в аккаунте. Повторная покупка ничего не меняет
+    if all(p.course_id != course_id for p in user.purchases):
+        user.purchases.append(Purchase(user_id=user.id, course_id=course_id))
+        db.commit()
+    return UserRead.from_user(user)
