@@ -4,13 +4,21 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import OptionalUser
 from app.db import get_db
 from app.models.course import Course, Lesson
 from app.models.exercise import Exercise
+from app.models.user import User
 from app.schemas.exercise import ExerciseRead
 from app.schemas.lesson import LessonRead
 
 router = APIRouter(prefix="/courses/{course_id}", tags=["lessons"])
+
+
+def _has_access(course: Course, user: User | None) -> bool:
+    return course.price == 0 or (
+        user is not None and any(p.course_id == course.id for p in user.purchases)
+    )
 
 
 @router.get(
@@ -20,7 +28,7 @@ router = APIRouter(prefix="/courses/{course_id}", tags=["lessons"])
     responses={404: {"description": "Урок не найден"}},
 )
 def get_lesson(
-    course_id: str, lesson_id: str, db: Annotated[Session, Depends(get_db)]
+    course_id: str, lesson_id: str, db: Annotated[Session, Depends(get_db)], user: OptionalUser
 ) -> LessonRead:
     course = db.get(Course, course_id)
     lessons = list(
@@ -31,8 +39,7 @@ def get_lesson(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Урок не найден")
 
     lesson = lessons[index]
-    # TODO: учитывать покупки пользователя, когда появится авторизация
-    locked = course.price > 0 and lesson.order != 1
+    locked = not _has_access(course, user) and lesson.order != 1
     data = {
         "id": lesson.id,
         "course_id": course_id,
@@ -69,12 +76,13 @@ def get_lesson(
         404: {"description": "Курс не найден"},
     },
 )
-def get_quiz(course_id: str, db: Annotated[Session, Depends(get_db)]) -> list[Exercise]:
+def get_quiz(
+    course_id: str, db: Annotated[Session, Depends(get_db)], user: OptionalUser
+) -> list[Exercise]:
     course = db.get(Course, course_id)
     if course is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Курс не найден")
-    # TODO: учитывать покупки пользователя, когда появится авторизация
-    if course.price > 0:
+    if not _has_access(course, user):
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "Тест доступен после покупки курса")
     return list(
         db.scalars(
