@@ -10,11 +10,12 @@ PWA-сайт для обучения «по шагу в день»: катало
 - React Router v6 (`createBrowserRouter`, для GitHub Pages — `createHashRouter`)
 - vite-plugin-pwa: manifest, service worker (Workbox), офлайн-кэш
 - Обычный CSS с дизайн-токенами (`src/styles/tokens.css`): зелёный `#176b52`, фон `#f6f7f3`, шрифт Inter, скругления 12–16px
-- Mock-данные в JS-файлах; бэкенд на FastAPI подключается позже через `src/services/api.js`
+- Данные и аккаунты — с backend на FastAPI (`../backend`), все запросы собраны в `src/services/api.js`, адрес задаётся `VITE_API_URL`
 
 ## Запуск
 
 ```bash
+cp .env.example .env.local   # адрес backend
 npm i
 npm run dev       # http://localhost:5173
 npm run build     # сборка в dist/
