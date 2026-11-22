@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class AnswerOption(BaseModel):
@@ -21,7 +23,9 @@ class ExerciseRead(BaseModel):
 
 
 class AttemptCreate(BaseModel):
-    option_id: str = Field(validation_alias="optionId")
+    option_id: Annotated[str, StringConstraints(min_length=1, max_length=10)] = Field(
+        validation_alias="optionId"
+    )
 
 
 class AttemptRead(BaseModel):
