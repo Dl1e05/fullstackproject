@@ -7,6 +7,7 @@ import Icon from '../components/Icon.jsx';
 import { AsyncView } from '../components/Loader.jsx';
 import { useAsync } from '../hooks/useAsync.js';
 import { useProgress } from '../hooks/useProgress.jsx';
+import { useAuth } from '../hooks/useAuth.jsx';
 import { getCourses } from '../services/api.js';
 
 const steps = [
@@ -35,7 +36,12 @@ function ContinueCard({ course }) {
 }
 
 export default function Home() {
-  const courses = useAsync(() => getCourses(), []);
+  const { sessionKey, accessKey, sessionToken } = useAuth();
+  return <HomeContent key={`${sessionKey}:${accessKey}`} sessionToken={sessionToken} />;
+}
+
+function HomeContent({ sessionToken }) {
+  const courses = useAsync(() => getCourses({}, sessionToken), [sessionToken]);
   const { state, getCourseStatus } = useProgress();
 
   return (
@@ -48,8 +54,7 @@ export default function Home() {
               Учитесь новому <span className="accent">по шагу в день</span>
             </h1>
             <p className="lead">
-              Короткие уроки по цифровой безопасности, Excel, английскому и другим полезным темам. Занимайтесь с
-              компьютера или телефона — прогресс сохранится.
+              Короткие уроки по цифровой безопасности, Excel, английскому и другим полезным темам. Гостевой прогресс остается в браузере, а прогресс аккаунта хранится в аккаунте.
             </p>
             <div className="hero__actions">
               <Button size="lg" to="/catalog">
@@ -67,7 +72,7 @@ export default function Home() {
                 <Icon name="check" size={18} /> Практика после каждого урока
               </li>
               <li>
-                <Icon name="wifiOff" size={18} /> Работает офлайн
+                <Icon name="wifiOff" size={18} /> Гостевой прогресс остается в браузере
               </li>
             </ul>
           </div>

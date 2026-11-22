@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import Button from '../components/Button.jsx';
 import InfoBox from '../components/InfoBox.jsx';
@@ -20,18 +20,27 @@ const TABS = [
 ];
 
 // Задание к уроку: выбрать ответ → «Проверить» → верно/ошибка и пояснение
-export function Practice({ exercise, onSolved }) {
+export function Practice({ exercise, onSolved, sessionToken }) {
+  const { ready, loading: progressLoading, pending } = useProgress();
   const [selected, setSelected] = useState(null);
   const [result, setResult] = useState(null);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const requestInFlight = useRef(false);
 
   async function check() {
+    if (!selected || sending || result || requestInFlight.current || !ready || progressLoading || pending) return;
+    requestInFlight.current = true;
     setSending(true);
+    setError('');
     try {
-      const res = await submitAttempt(exercise.id, selected);
+      const res = await submitAttempt(exercise.id, selected, sessionToken);
       setResult(res);
       if (res.correct) onSolved?.();
+    } catch (ex) {
+      setError(ex.message || 'Не удалось проверить ответ. Попробуйте еще раз.');
     } finally {
+      requestInFlight.current = false;
       setSending(false);
     }
   }
@@ -72,9 +81,10 @@ export function Practice({ exercise, onSolved }) {
           <span>{result.explanation}</span>
         </div>
       )}
+      {error && <div className="feedback feedback--error" role="alert">{error}</div>}
       <div className="practice__actions">
         {!result && (
-          <Button onClick={check} disabled={!selected || sending}>
+          <Button onClick={check} disabled={!selected || sending || !ready || progressLoading || pending}>
             {sending ? 'Проверяем…' : 'Проверить'}
           </Button>
         )}
@@ -88,21 +98,61 @@ export function Practice({ exercise, onSolved }) {
   );
 }
 
-function LessonView({ course, lesson }) {
+function LessonView({ course, lesson, sessionKey, sessionToken }) {
   const navigate = useNavigate();
   const [tab, setTab] = useState('summary');
-  const { completeLesson, visitLesson, isLessonDone, getCourseProgress } = useProgress();
+  const { ready, loading: progressLoading, pending, completeLesson, visitLesson, isLessonDone, getCourseProgress } = useProgress();
+  const [visitError, setVisitError] = useState('');
+  const [finishError, setFinishError] = useState('');
+  const [visiting, setVisiting] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const visitInFlight = useRef(false);
+  const finishInFlight = useRef(false);
+  const autoVisited = useRef(new Set());
   const done = isLessonDone(course.id, lesson.id);
   const progress = getCourseProgress(course);
 
-  useEffect(() => {
-    if (!lesson.locked) visitLesson(course.id, lesson.id);
-    setTab('summary');
-  }, [course.id, lesson.id, lesson.locked, visitLesson]);
+  const recordVisit = useCallback(async () => {
+    if (!ready || progressLoading || lesson.locked || visitInFlight.current) return;
+    visitInFlight.current = true;
+    setVisiting(true);
+    setVisitError('');
+    try {
+      await visitLesson(course.id, lesson.id);
+    } catch (error) {
+      setVisitError(error.message || 'Не удалось сохранить открытый урок. Попробуйте еще раз.');
+    } finally {
+      visitInFlight.current = false;
+      setVisiting(false);
+    }
+  }, [ready, progressLoading, lesson.locked, lesson.id, visitLesson, course.id]);
 
-  function finish() {
-    completeLesson(course.id, lesson.id);
-    navigate(lesson.nextId ? `/courses/${course.id}/lessons/${lesson.nextId}` : `/courses/${course.id}/quiz`);
+  useEffect(() => {
+    setTab('summary');
+  }, [course.id, lesson.id]);
+
+  useEffect(() => {
+    if (lesson.locked || !ready || progressLoading) return;
+    const key = `${sessionKey}:${course.id}:${lesson.id}`;
+    if (autoVisited.current.has(key)) return;
+    autoVisited.current.add(key);
+    void recordVisit();
+  }, [lesson.locked, ready, progressLoading, sessionKey, course.id, lesson.id, recordVisit]);
+
+  async function finish() {
+    if (!ready || progressLoading || pending || finishing || finishInFlight.current) return;
+    finishInFlight.current = true;
+    setFinishing(true);
+    setFinishError('');
+    try {
+      await completeLesson(course.id, lesson.id);
+      navigate(lesson.nextId ? `/courses/${course.id}/lessons/${lesson.nextId}` : `/courses/${course.id}/quiz`);
+    } catch (error) {
+      setFinishError(error.message || 'Не удалось сохранить прогресс. Попробуйте еще раз.');
+    } finally {
+      finishInFlight.current = false;
+      setFinishing(false);
+    }
   }
 
   return (
@@ -127,6 +177,14 @@ function LessonView({ course, lesson }) {
             )}
           </div>
         </div>
+        {visitError && (
+          <div className="feedback feedback--error" role="alert">
+            <span>{visitError}</span>
+            <Button variant="outline" onClick={() => void recordVisit()} disabled={visiting || pending}>
+              Повторить
+            </Button>
+          </div>
+        )}
 
         {lesson.locked ? (
           <div className="card">
@@ -160,7 +218,7 @@ function LessonView({ course, lesson }) {
               )}
             </>
           ) : lesson.practice ? (
-            <Practice key={lesson.practice.id} exercise={lesson.practice} />
+            <Practice key={lesson.practice.id} exercise={lesson.practice} sessionToken={sessionToken} />
           ) : (
             <p className="muted">Для этого урока нет практического задания.</p>
           )}
@@ -176,12 +234,13 @@ function LessonView({ course, lesson }) {
             <Icon name="arrowLeft" size={18} /> {lesson.prevId ? 'Предыдущий' : 'К курсу'}
           </Button>
           {!lesson.locked && (
-          <Button onClick={finish}>
-            {lesson.nextId ? (done ? 'Следующий урок' : 'Урок пройден, дальше') : 'Перейти к тесту'}
+          <Button onClick={finish} disabled={!ready || progressLoading || pending || finishing}>
+            {finishing ? 'Сохраняем...' : finishError ? 'Повторить сохранение' : lesson.nextId ? (done ? 'Следующий урок' : 'Урок пройден, дальше') : 'Перейти к тесту'}
             <Icon name="arrowRight" size={18} />
           </Button>
           )}
         </nav>
+        {finishError && <p className="feedback feedback--error" role="alert">{finishError}</p>}
       </article>
 
       <aside className="lesson-aside card">
@@ -219,11 +278,23 @@ function LessonView({ course, lesson }) {
 export default function Lesson() {
   const { course } = useOutletContext();
   const { lessonId } = useParams();
-  const { accessKey } = useAuth();
-  const lesson = useAsync(() => getLesson(course.id, lessonId), [course.id, lessonId, accessKey]);
+  const { accessKey, sessionKey, sessionToken } = useAuth();
   return (
-    <AsyncView state={lesson} label="Открываем урок…">
-      {(data) => (data.id === lessonId ? <LessonView course={course} lesson={data} /> : <Loader label="Открываем урок…" />)}
+    <LessonData
+      key={`${course.id}:${lessonId}:${sessionKey}:${accessKey}`}
+      course={course}
+      lessonId={lessonId}
+      sessionKey={sessionKey}
+      sessionToken={sessionToken}
+    />
+  );
+}
+
+function LessonData({ course, lessonId, sessionKey, sessionToken }) {
+  const lesson = useAsync(() => getLesson(course.id, lessonId, sessionToken), [course.id, lessonId, sessionToken]);
+  return (
+    <AsyncView state={lesson} label="Открываем урок...">
+      {(data) => (data.id === lessonId ? <LessonView course={course} lesson={data} sessionKey={sessionKey} sessionToken={sessionToken} /> : <Loader label="Открываем урок..." />)}
     </AsyncView>
   );
 }

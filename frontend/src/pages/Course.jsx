@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import Button from '../components/Button.jsx';
 import CourseCover from '../components/CourseCover.jsx';
@@ -11,20 +12,38 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import { formatPrice, getCourse } from '../services/api.js';
 
 function CourseView({ course }) {
-  const { state, isSaved, toggleSaved, isLessonDone, getCourseProgress, getCourseStatus } = useProgress();
-  const { buyCourse } = useAuth();
+  const { state, ready: progressReady, loading: progressLoading, error: progressError, pending, isSaved, toggleSaved, isLessonDone, getCourseProgress, getCourseStatus } = useProgress();
+  const { buyCourse, ready: authReady } = useAuth();
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
   const progress = getCourseProgress(course);
   const status = getCourseStatus(course.id);
   const saved = isSaved(course.id);
   const quiz = state.quiz[course.id];
   const locked = !course.hasAccess;
 
+  const firstLesson = course.lessons?.[0];
   const nextLesson = course.lessons.find((l) => !isLessonDone(course.id, l.id));
   const lastId = state.last[course.id]?.lessonId;
   const startTo = nextLesson
     ? `/courses/${course.id}/lessons/${status === 'new' ? course.lessons[0].id : nextLesson.id}`
-    : `/courses/${course.id}/quiz`;
+    : course.lessons.length
+      ? `/courses/${course.id}/quiz`
+      : `/courses/${course.id}`;
   const startLabel = status === 'new' ? 'Начать курс' : nextLesson ? 'Продолжить' : quiz?.passed ? 'Пройти тест ещё раз' : 'Перейти к тесту';
+
+  async function handleToggleSaved() {
+    if (!progressReady || progressLoading || progressError || pending || saving) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await toggleSaved(course.id);
+    } catch (error) {
+      setSaveError(error.message || 'Не удалось обновить избранное. Попробуйте еще раз.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="container page">
@@ -72,12 +91,14 @@ function CourseView({ course }) {
           <div className="course-hero__actions">
             {locked ? (
               <>
-                <Button size="lg" onClick={() => buyCourse(course)}>
+                <Button size="lg" onClick={() => buyCourse(course)} disabled={!authReady}>
                   Купить за {formatPrice(course.price)}
                 </Button>
-                <Button size="lg" variant="outline" to={`/courses/${course.id}/lessons/${course.lessons[0].id}`}>
-                  Пробный урок
-                </Button>
+                {firstLesson && (
+                  <Button size="lg" variant="outline" to={`/courses/${course.id}/lessons/${firstLesson.id}`}>
+                    Пробный урок
+                  </Button>
+                )}
               </>
             ) : (
               <Button size="lg" to={startTo}>
@@ -87,7 +108,8 @@ function CourseView({ course }) {
             <Button
               size="lg"
               variant={saved ? 'soft' : 'outline'}
-              onClick={() => toggleSaved(course.id)}
+              onClick={handleToggleSaved}
+              disabled={!progressReady || progressLoading || !!progressError || pending || saving}
               aria-pressed={saved}
               aria-label={saved ? 'Убрать из избранного' : 'Сохранить в избранное'}
             >
@@ -95,6 +117,7 @@ function CourseView({ course }) {
               {saved ? 'Сохранено' : 'Сохранить'}
             </Button>
           </div>
+          {saveError && <p className="feedback feedback--error" role="alert">{saveError}</p>}
           {saved && <p className="hint">Курс добавлен в «Моё обучение → Избранное».</p>}
         </div>
       </section>
@@ -157,8 +180,18 @@ function CourseView({ course }) {
 
 export default function Course() {
   const { courseId } = useParams();
-  const { accessKey } = useAuth();
-  const course = useAsync(() => getCourse(courseId), [courseId, accessKey]);
+  const { accessKey, sessionKey, sessionToken } = useAuth();
+  return (
+    <CourseData
+      key={`${courseId}:${sessionKey}:${accessKey}`}
+      courseId={courseId}
+      sessionToken={sessionToken}
+    />
+  );
+}
+
+function CourseData({ courseId, sessionToken }) {
+  const course = useAsync(() => getCourse(courseId, sessionToken), [courseId, sessionToken]);
   return (
     <AsyncView state={course} label="Загружаем курс…">
       {(data) => <CourseView course={data} />}

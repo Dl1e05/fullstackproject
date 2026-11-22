@@ -6,7 +6,7 @@ import CourseCover from './CourseCover.jsx';
 import Icon from './Icon.jsx';
 import { formatPrice } from '../services/api.js';
 
-// Демо-оформление покупки: реальная оплата появится вместе с бэкендом и платёжным провайдером
+// Демо-покупка открывает курс без списания денег.
 export default function PurchaseModal({ course, onClose, onConfirm }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -47,7 +47,7 @@ export default function PurchaseModal({ course, onClose, onConfirm }) {
             <Icon name="check" size={32} />
           </span>
           <p>
-            Курс «{course.title}» добавлен в ваш аккаунт. Все уроки и итоговый тест теперь доступны.
+            Курс "{course.title}" добавлен в ваш аккаунт. Все уроки и итоговый тест теперь доступны.
           </p>
           <Button size="lg" block onClick={start}>
             Начать обучение <Icon name="arrowRight" size={18} />
@@ -70,11 +70,11 @@ export default function PurchaseModal({ course, onClose, onConfirm }) {
               <Icon name="check" size={18} /> Итоговый тест
             </li>
             <li>
-              <Icon name="check" size={18} /> Доступ навсегда, в том числе офлайн
+              <Icon name="check" size={18} /> Доступ ко всем урокам курса
             </li>
           </ul>
           <div className="purchase__total">
-            <span>К оплате</span>
+            <span>Цена курса</span>
             <strong>{formatPrice(course.price)}</strong>
           </div>
           {status === 'error' && (
@@ -83,7 +83,7 @@ export default function PurchaseModal({ course, onClose, onConfirm }) {
             </div>
           )}
           <Button size="lg" block onClick={pay} disabled={status === 'paying'}>
-            {status === 'paying' ? 'Обрабатываем оплату…' : `Оплатить ${formatPrice(course.price)}`}
+            {status === 'paying' ? 'Открываем курс...' : 'Подтвердить покупку'}
           </Button>
           <p className="hint">Демо-режим: деньги не списываются, данные карты не запрашиваются.</p>
         </div>

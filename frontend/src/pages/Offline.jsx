@@ -2,8 +2,7 @@ import EmptyState from '../components/EmptyState.jsx';
 import Button from '../components/Button.jsx';
 import { useOnline } from '../hooks/useOnline.js';
 
-// Состояние «нет сети» из макета. Приложение закэшировано service worker'ом,
-// поэтому уроки и прогресс доступны и без интернета.
+// Поясняет, какие данные доступны без подключения.
 export default function Offline() {
   const online = useOnline();
   return (
@@ -13,8 +12,8 @@ export default function Offline() {
         title={online ? 'Соединение восстановлено' : 'Нет подключения к интернету'}
         text={
           online
-            ? 'Можно продолжать обучение.'
-            : 'Проверьте Wi‑Fi или мобильный интернет. Уже открытые курсы и ваш прогресс доступны офлайн.'
+            ? 'Можно снова попробовать открыть курсы.'
+            : 'Проверьте Wi-Fi или мобильный интернет. Приложение можно открыть без сети, но для загрузки курсов и сохранения прогресса в аккаунте нужно подключение. Гостевой прогресс остается в этом браузере.'
         }
       >
         <Button onClick={() => window.location.reload()}>Попробовать снова</Button>

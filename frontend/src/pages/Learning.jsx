@@ -6,6 +6,7 @@ import { Tabs } from '../components/Tabs.jsx';
 import { AsyncView } from '../components/Loader.jsx';
 import { useAsync } from '../hooks/useAsync.js';
 import { useProgress } from '../hooks/useProgress.jsx';
+import { useAuth } from '../hooks/useAuth.jsx';
 import { getCourses } from '../services/api.js';
 
 const EMPTY = {
@@ -27,9 +28,14 @@ const EMPTY = {
 };
 
 export default function Learning() {
+  const { sessionKey, accessKey, sessionToken } = useAuth();
+  return <LearningContent key={`${sessionKey}:${accessKey}`} sessionToken={sessionToken} />;
+}
+
+function LearningContent({ sessionToken }) {
   const [params, setParams] = useSearchParams();
   const tab = EMPTY[params.get('tab')] ? params.get('tab') : 'progress';
-  const courses = useAsync(() => getCourses(), []);
+  const courses = useAsync(() => getCourses({}, sessionToken), [sessionToken]);
   const { getCourseStatus, isSaved } = useProgress();
 
   return (

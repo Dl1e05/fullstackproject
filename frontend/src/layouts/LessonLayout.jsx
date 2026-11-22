@@ -2,6 +2,7 @@ import { Link, Outlet, ScrollRestoration, useParams } from 'react-router-dom';
 import Logo from '../components/Logo.jsx';
 import Icon from '../components/Icon.jsx';
 import OfflineBanner from '../components/OfflineBanner.jsx';
+import ProgressStatus from '../components/ProgressStatus.jsx';
 import { AsyncView } from '../components/Loader.jsx';
 import { useAsync } from '../hooks/useAsync.js';
 import { getCourse } from '../services/api.js';
@@ -11,8 +12,18 @@ import { useAuth } from '../hooks/useAuth.jsx';
 // Курс загружается один раз и передаётся страницам через Outlet context.
 export default function LessonLayout() {
   const { courseId } = useParams();
-  const { accessKey } = useAuth();
-  const course = useAsync(() => getCourse(courseId), [courseId, accessKey]);
+  const { accessKey, sessionKey, sessionToken } = useAuth();
+  return (
+    <LessonLayoutContent
+      key={`${courseId}:${sessionKey}:${accessKey}`}
+      courseId={courseId}
+      sessionToken={sessionToken}
+    />
+  );
+}
+
+function LessonLayoutContent({ courseId, sessionToken }) {
+  const course = useAsync(() => getCourse(courseId, sessionToken), [courseId, sessionToken]);
 
   return (
     <div className="layout layout--lesson">
@@ -27,6 +38,7 @@ export default function LessonLayout() {
         </div>
       </header>
       <OfflineBanner />
+      <ProgressStatus />
       <main className="layout__content">
         <AsyncView state={course} label="Открываем курс…">
           {(data) => <Outlet context={{ course: data }} />}

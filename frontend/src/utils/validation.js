@@ -1,37 +1,7 @@
-// Проверки полей входа и регистрации. Используются и формой, и mock-сервером в api.js
-// (на FastAPI те же правила нужно повторить на сервере).
-
-export const ALLOWED_EMAIL_DOMAINS = [
-  'gmail.com',
-  'mail.ru',
-  'inbox.ru',
-  'list.ru',
-  'bk.ru',
-  'yandex.ru',
-  'ya.ru',
-  'icloud.com',
-  'outlook.com',
-];
+// Проверки на клиенте помогают заполнить форму; API повторно проверяет значения.
 
 export const PASSWORD_MIN_LENGTH = 8;
-
-// Частые опечатки в доменах → подсказка «Возможно, вы имели в виду …»
-const DOMAIN_TYPOS = {
-  'gmail.ru': 'gmail.com',
-  'gmial.com': 'gmail.com',
-  'gmai.com': 'gmail.com',
-  'gmail.co': 'gmail.com',
-  'gamil.com': 'gmail.com',
-  'gmail.con': 'gmail.com',
-  'mail.com': 'mail.ru',
-  'mail.ry': 'mail.ru',
-  'mial.ru': 'mail.ru',
-  'yandex.com': 'yandex.ru',
-  'yandex.ry': 'yandex.ru',
-  'yandeks.ru': 'yandex.ru',
-  'icloud.ru': 'icloud.com',
-  'outlook.ru': 'outlook.com',
-};
+export const PASSWORD_MAX_LENGTH = 128;
 
 const EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
 
@@ -52,8 +22,6 @@ export function validateEmail(raw) {
   if (/[а-яё]/i.test(email)) return 'Почта пишется латинскими буквами';
   if (local.startsWith('.') || local.endsWith('.') || local.includes('..')) return 'Точка не может стоять в начале, в конце или дважды подряд';
   if (!EMAIL_RE.test(email)) return 'Проверьте адрес: похоже, в нём ошибка';
-  if (DOMAIN_TYPOS[domain]) return `Возможно, вы имели в виду ${local}@${DOMAIN_TYPOS[domain]}?`;
-  if (!ALLOWED_EMAIL_DOMAINS.includes(domain)) return `Почта на ${domain} не поддерживается. Используйте Gmail, Mail.ru, Яндекс, iCloud или Outlook`;
   return null;
 }
 
@@ -69,6 +37,7 @@ export function passwordRules(password) {
 
 export function validatePassword(password) {
   if (!password) return 'Введите пароль';
+  if (password.length > PASSWORD_MAX_LENGTH) return `Пароль должен быть не длиннее ${PASSWORD_MAX_LENGTH} символов`;
   if (/\s/.test(password)) return 'Пароль не должен содержать пробелов';
   if (/[а-яё]/i.test(password)) return 'Пароль вводится латинскими буквами — проверьте раскладку';
   if (password.length < PASSWORD_MIN_LENGTH) return `Пароль должен быть не короче ${PASSWORD_MIN_LENGTH} символов`;

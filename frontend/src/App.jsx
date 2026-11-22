@@ -7,6 +7,7 @@ import LessonLayout from './layouts/LessonLayout.jsx';
 import Home from './pages/Home.jsx';
 import Catalog from './pages/Catalog.jsx';
 import Course from './pages/Course.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
 import Lesson from './pages/Lesson.jsx';
 import Quiz from './pages/Quiz.jsx';
 import Learning from './pages/Learning.jsx';
@@ -15,10 +16,19 @@ import Offline from './pages/Offline.jsx';
 import NotFound from './pages/NotFound.jsx';
 
 // Корневой маршрут: аккаунт и окна входа/покупки доступны на всех страницах
+function RootContent() {
+  const { sessionKey } = useAuth();
+  return (
+    <ProgressProvider key={sessionKey}>
+      <Outlet />
+    </ProgressProvider>
+  );
+}
+
 function Root() {
   return (
     <AuthProvider>
-      <Outlet />
+      <RootContent />
     </AuthProvider>
   );
 }
@@ -45,6 +55,7 @@ const routes = [
           { path: 'courses/:courseId', element: <Course /> },
           { path: 'learning', element: <Learning /> },
           { path: 'profile', element: <Profile /> },
+          { path: 'reset-password', element: <ResetPassword /> },
           { path: 'login', element: <AuthRoute mode="login" /> },
           { path: 'register', element: <AuthRoute mode="register" /> },
           { path: 'offline', element: <Offline /> },
@@ -68,9 +79,5 @@ const createRouter = import.meta.env.VITE_HASH_ROUTER === 'true' ? createHashRou
 const router = createRouter(routes);
 
 export default function App() {
-  return (
-    <ProgressProvider>
-      <RouterProvider router={router} />
-    </ProgressProvider>
-  );
+  return <RouterProvider router={router} />;
 }

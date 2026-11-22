@@ -3,7 +3,8 @@ import Modal from './Modal.jsx';
 import Button from './Button.jsx';
 import Icon from './Icon.jsx';
 import { Tabs } from './Tabs.jsx';
-import { ALLOWED_EMAIL_DOMAINS, passwordRules, validateEmail, validateName, validatePassword } from '../utils/validation.js';
+import { forgotPassword } from '../services/api.js';
+import { PASSWORD_MAX_LENGTH, passwordRules, validateEmail, validateName, validatePassword } from '../utils/validation.js';
 
 const EMPTY = { name: '', email: '', password: '', confirm: '' };
 const MODES = [
@@ -49,8 +50,11 @@ export default function AuthModal({ open, mode, message, onModeChange, onClose, 
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [forgot, setForgot] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
   const formRef = useRef(null);
+  const requestInFlight = useRef(false);
   const isRegister = mode === 'register';
+  const isForgot = forgot && !isRegister;
 
   // Новое открытие окна — чистая форма
   useEffect(() => {
@@ -66,9 +70,10 @@ export default function AuthModal({ open, mode, message, onModeChange, onClose, 
     setServerErrors({});
     setFormError('');
     setForgot(false);
+    setForgotSent(false);
   }, [mode, open]);
 
-  const fields = isRegister ? ['name', 'email', 'password', 'confirm'] : ['email', 'password'];
+  const fields = isForgot ? ['email'] : isRegister ? ['name', 'email', 'password', 'confirm'] : ['email', 'password'];
 
   const errors = useMemo(() => {
     const e = { email: validateEmail(values.email) };
@@ -77,11 +82,11 @@ export default function AuthModal({ open, mode, message, onModeChange, onClose, 
       e.password = validatePassword(values.password);
       if (!values.confirm) e.confirm = 'Повторите пароль';
       else if (values.confirm !== values.password) e.confirm = 'Пароли не совпадают';
-    } else {
+    } else if (!isForgot) {
       e.password = values.password ? null : 'Введите пароль';
     }
     return e;
-  }, [values, isRegister]);
+  }, [values, isRegister, isForgot]);
 
   const errorOf = (f) => serverErrors[f] || (touched[f] ? errors[f] : null);
   const rules = passwordRules(values.password);
@@ -93,21 +98,27 @@ export default function AuthModal({ open, mode, message, onModeChange, onClose, 
       setValues((v) => ({ ...v, [f]: value }));
       setServerErrors((s) => ({ ...s, [f]: null }));
       setFormError('');
+      setForgotSent(false);
     },
     onBlur: () => values[f] && setTouched((t) => ({ ...t, [f]: true })),
   });
 
   async function submit(e) {
     e.preventDefault();
+    if (requestInFlight.current) return;
     setTouched(Object.fromEntries(fields.map((f) => [f, true])));
     const firstInvalid = fields.find((f) => errors[f]);
     if (firstInvalid) {
       formRef.current?.querySelector(`[name="${firstInvalid}"]`)?.focus();
       return;
     }
+    requestInFlight.current = true;
     setLoading(true);
     try {
-      if (isRegister) await onRegister({ name: values.name, email: values.email, password: values.password });
+      if (isForgot) {
+        await forgotPassword({ email: values.email });
+        setForgotSent(true);
+      } else if (isRegister) await onRegister({ name: values.name, email: values.email, password: values.password });
       else await onLogin({ email: values.email, password: values.password });
     } catch (err) {
       if (err.field) {
@@ -117,6 +128,7 @@ export default function AuthModal({ open, mode, message, onModeChange, onClose, 
         setFormError(err.message ?? 'Что-то пошло не так. Попробуйте ещё раз.');
       }
     } finally {
+      requestInFlight.current = false;
       setLoading(false);
     }
   }
@@ -133,8 +145,8 @@ export default function AuthModal({ open, mode, message, onModeChange, onClose, 
   );
 
   return (
-    <Modal open={open} onClose={onClose} title={isRegister ? 'Создайте аккаунт' : 'Вход в «Шаг»'}>
-      <Tabs items={MODES} value={mode} onChange={onModeChange} label="Вход или регистрация" />
+    <Modal open={open} onClose={onClose} title={isForgot ? 'Восстановление пароля' : isRegister ? 'Создайте аккаунт' : 'Вход в "Шаг"'}>
+      {!isForgot && <Tabs items={MODES} value={mode} onChange={onModeChange} label="Вход или регистрация" />}
 
       {message && (
         <p className="auth__message">
@@ -142,7 +154,17 @@ export default function AuthModal({ open, mode, message, onModeChange, onClose, 
         </p>
       )}
 
-      <form ref={formRef} className="form auth" onSubmit={submit} noValidate>
+      {isForgot && forgotSent ? (
+        <div className="form auth">
+          <div className="feedback feedback--ok" role="status">
+            <span>Запрос на восстановление принят.</span>
+          </div>
+          <Button type="button" size="lg" block variant="outline" onClick={() => { setForgot(false); setForgotSent(false); }}>
+            Вернуться ко входу
+          </Button>
+        </div>
+      ) : (
+      <form ref={formRef} className="form auth" onSubmit={submit} noValidate aria-busy={loading}>
         {formError && (
           <div className="feedback feedback--error" role="alert">
             <span>{formError}</span>
@@ -161,23 +183,24 @@ export default function AuthModal({ open, mode, message, onModeChange, onClose, 
           autoComplete="email"
           autoCapitalize="none"
           spellCheck={false}
-          placeholder="name@gmail.com"
+          placeholder="name@example.com"
           error={errorOf('email')}
-          hint={isRegister ? 'Gmail, Mail.ru, Яндекс, iCloud или Outlook' : undefined}
-          title={`Поддерживаются: ${ALLOWED_EMAIL_DOMAINS.join(', ')}`}
           {...bind('email')}
         />
 
-        <Field
-          label="Пароль"
-          name="password"
-          type={showPassword ? 'text' : 'password'}
-          autoComplete={isRegister ? 'new-password' : 'current-password'}
-          placeholder={isRegister ? 'Минимум 8 символов' : 'Ваш пароль'}
-          error={errorOf('password')}
-          trailing={eye}
-          {...bind('password')}
-        />
+        {!isForgot && (
+          <Field
+            label="Пароль"
+            name="password"
+            type={showPassword ? 'text' : 'password'}
+            autoComplete={isRegister ? 'new-password' : 'current-password'}
+            placeholder={isRegister ? 'Минимум 8 символов' : 'Ваш пароль'}
+            maxLength={PASSWORD_MAX_LENGTH}
+            error={errorOf('password')}
+            trailing={eye}
+            {...bind('password')}
+          />
+        )}
 
         {isRegister && values.password && (
           <ul className="password-rules" aria-label="Требования к паролю">
@@ -196,34 +219,37 @@ export default function AuthModal({ open, mode, message, onModeChange, onClose, 
             type={showPassword ? 'text' : 'password'}
             autoComplete="new-password"
             placeholder="Ещё раз тот же пароль"
+            maxLength={PASSWORD_MAX_LENGTH}
             error={errorOf('confirm')}
             {...bind('confirm')}
           />
         )}
 
-        {!isRegister && (
+        {!isRegister && !isForgot && (
           <div className="auth__row">
-            <button type="button" className="link-btn" onClick={() => setForgot((f) => !f)}>
+            <button type="button" className="link-btn" onClick={() => { setForgot(true); setForgotSent(false); setFormError(''); }}>
               Забыли пароль?
             </button>
           </div>
         )}
-        {forgot && !isRegister && (
-          <p className="hint">Восстановление пароля по почте появится после подключения сервера. Пока создайте новый аккаунт.</p>
-        )}
 
         <Button type="submit" size="lg" block disabled={loading}>
-          {loading ? (isRegister ? 'Создаём аккаунт…' : 'Входим…') : isRegister ? 'Зарегистрироваться' : 'Войти'}
+          {loading ? (isForgot ? 'Отправляем...' : isRegister ? 'Создаём аккаунт...' : 'Входим...') : isForgot ? 'Отправить инструкции' : isRegister ? 'Зарегистрироваться' : 'Войти'}
         </Button>
 
-        <p className="auth__switch">
+        {!isForgot && <p className="auth__switch">
           {isRegister ? 'Уже есть аккаунт?' : 'Ещё нет аккаунта?'}{' '}
           <button type="button" className="link-btn" onClick={() => onModeChange(isRegister ? 'login' : 'register')}>
             {isRegister ? 'Войти' : 'Зарегистрироваться'}
           </button>
-        </p>
-        <p className="hint auth__note">Учебный проект: аккаунты хранятся только в этом браузере.</p>
+        </p>}
+        {isForgot && (
+          <button type="button" className="link-btn" onClick={() => { setForgot(false); setFormError(''); }}>
+            Вернуться ко входу
+          </button>
+        )}
       </form>
+      )}
     </Modal>
   );
 }

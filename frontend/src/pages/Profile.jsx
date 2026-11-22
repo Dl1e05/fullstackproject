@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Button from '../components/Button.jsx';
 import Icon from '../components/Icon.jsx';
 import InstallBanner from '../components/InstallBanner.jsx';
+import { AsyncView } from '../components/Loader.jsx';
 import { useProgress } from '../hooks/useProgress.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useInstallPrompt } from '../hooks/useInstallPrompt.js';
@@ -84,38 +85,71 @@ function AccountForm({ user, updateName }) {
   );
 }
 
-function Purchases({ user }) {
-  const courses = useAsync(() => getCourses({ price: 'paid' }), []);
-  const owned = courses.data?.filter((c) => user.purchases.includes(c.id)) ?? [];
+function Purchases({ user, sessionToken }) {
+  const courses = useAsync(() => getCourses({ price: 'paid' }, sessionToken), [sessionToken]);
   return (
     <section className="card stack">
       <h2>Мои покупки</h2>
-      {owned.length ? (
-        <ul className="purchases">
-          {owned.map((c) => (
-            <li key={c.id}>
-              <Link to={`/courses/${c.id}`}>{c.title}</Link>
-              <span className="muted">{formatPrice(c.price)}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="muted">
-          Вы ещё не покупали курсы. <Link to="/catalog?price=paid">Посмотреть премиум-курсы</Link>
-        </p>
-      )}
+      <AsyncView state={courses} label="Загружаем покупки...">
+        {(list) => {
+          const owned = list.filter((course) => user.purchases.includes(course.id));
+          return owned.length ? (
+            <ul className="purchases">
+              {owned.map((course) => (
+                <li key={course.id}>
+                  <Link to={`/courses/${course.id}`}>{course.title}</Link>
+                  <span className="muted">{formatPrice(course.price)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">
+              Вы ещё не покупали курсы. <Link to="/catalog?price=paid">Посмотреть премиум-курсы</Link>
+            </p>
+          );
+        }}
+      </AsyncView>
     </section>
   );
 }
 
 export default function Profile() {
-  const { stats, resetAll } = useProgress();
-  const { user, ready, openAuth, logout, updateName } = useAuth();
+  const { stats, ready: progressReady, loading: progressLoading, error: progressError, pending, resetAll } = useProgress();
+  const { user, ready, openAuth, logout, updateName, sessionKey, sessionToken, accessKey } = useAuth();
   const { isStandalone } = useInstallPrompt();
+  const [resetError, setResetError] = useState('');
+  const [logoutError, setLogoutError] = useState('');
+  const [loggingOut, setLoggingOut] = useState(false);
 
-  function reset() {
-    if (window.confirm('Сбросить весь прогресс и избранное на этом устройстве?')) resetAll();
+  async function handleLogout() {
+    if (loggingOut || !ready) return;
+    setLoggingOut(true);
+    setLogoutError('');
+    try {
+      await logout();
+    } catch (error) {
+      setLogoutError(error.message || 'Не удалось выйти из аккаунта. Попробуйте еще раз.');
+    } finally {
+      setLoggingOut(false);
+    }
   }
+
+  async function reset() {
+    const target = user ? 'во всём аккаунте' : 'на этом устройстве';
+    if (!window.confirm(`Сбросить прогресс, избранное и результаты тестов ${target}?`)) return;
+    setResetError('');
+    try {
+      await resetAll();
+    } catch (error) {
+      setResetError(error.message || 'Не удалось сбросить данные. Попробуйте еще раз.');
+    }
+  }
+
+  const shownStats = progressLoading
+    ? { lessonsDone: '...', coursesDone: '...', saved: '...' }
+    : progressReady && !progressError
+      ? stats
+      : { lessonsDone: '-', coursesDone: '-', saved: '-' };
 
   return (
     <div className="container page profile">
@@ -124,11 +158,12 @@ export default function Profile() {
         <div className="profile__who">
           <h1>{user ? user.name : 'Гость'}</h1>
           <p className="muted">{user ? user.email : 'Войдите, чтобы покупать курсы и сохранить аккаунт'}</p>
+          {logoutError && <p className="field__error" role="alert">{logoutError}</p>}
         </div>
         {ready &&
           (user ? (
-            <Button variant="outline" onClick={logout}>
-              <Icon name="logout" size={18} /> Выйти
+            <Button variant="outline" onClick={handleLogout} disabled={loggingOut} aria-busy={loggingOut}>
+              <Icon name="logout" size={18} /> {loggingOut ? 'Выходим...' : 'Выйти'}
             </Button>
           ) : (
             <div className="profile__auth">
@@ -142,15 +177,15 @@ export default function Profile() {
 
       <section className="stats">
         <div className="stat card">
-          <strong>{stats.lessonsDone}</strong>
+          <strong>{shownStats.lessonsDone}</strong>
           <span>уроков пройдено</span>
         </div>
         <div className="stat card">
-          <strong>{stats.coursesDone}</strong>
+          <strong>{shownStats.coursesDone}</strong>
           <span>курсов завершено</span>
         </div>
         <div className="stat card">
-          <strong>{stats.saved}</strong>
+          <strong>{shownStats.saved}</strong>
           <span>в избранном</span>
         </div>
       </section>
@@ -159,7 +194,7 @@ export default function Profile() {
         {user ? (
           <div className="stack">
             <AccountForm user={user} updateName={updateName} />
-            <Purchases user={user} />
+            <Purchases key={`${sessionKey}:${accessKey}`} user={user} sessionToken={sessionToken} />
           </div>
         ) : (
           <section className="card stack">
@@ -189,8 +224,13 @@ export default function Profile() {
           )}
           <hr />
           <h2>Данные</h2>
-          <p className="muted">Прогресс, избранное и результаты тестов сохраняются в браузере.</p>
-          <Button variant="outline" onClick={reset} className="btn--danger">
+          <p className="muted">
+            {user
+              ? 'Прогресс, избранное и результаты тестов хранятся в аккаунте. Для загрузки и изменений нужно подключение к интернету.'
+              : 'Прогресс, избранное и результаты тестов хранятся только в этом браузере на этом устройстве.'}
+          </p>
+          {resetError && <p className="feedback feedback--error" role="alert">{resetError}</p>}
+          <Button variant="outline" onClick={reset} className="btn--danger" disabled={!progressReady || progressLoading || pending}>
             Сбросить прогресс
           </Button>
         </section>

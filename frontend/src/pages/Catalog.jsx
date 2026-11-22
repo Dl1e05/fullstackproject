@@ -8,9 +8,15 @@ import { Chip } from '../components/Tabs.jsx';
 import { Loader, ErrorState } from '../components/Loader.jsx';
 import { useAsync } from '../hooks/useAsync.js';
 import { useProgress } from '../hooks/useProgress.jsx';
+import { useAuth } from '../hooks/useAuth.jsx';
 import { getCourses, getTopics } from '../services/api.js';
 
 export default function Catalog() {
+  const { sessionKey, accessKey, sessionToken } = useAuth();
+  return <CatalogContent key={`${sessionKey}:${accessKey}`} sessionToken={sessionToken} />;
+}
+
+function CatalogContent({ sessionToken }) {
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
   const topic = params.get('topic') ?? '';
@@ -19,7 +25,7 @@ export default function Catalog() {
   const { getCourseStatus } = useProgress();
 
   const topics = useAsync(() => getTopics(), []);
-  const courses = useAsync(() => getCourses({ q, topic, price }), [q, topic, price]);
+  const courses = useAsync(() => getCourses({ q, topic, price }, sessionToken), [q, topic, price, sessionToken]);
 
   // /catalog?focus=1 — переход с иконки поиска в мобильной шапке
   useEffect(() => {
