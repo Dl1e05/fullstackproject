@@ -1,0 +1,49 @@
+# Весь проект одной командой:  docker compose up --build
+#   frontend  http://localhost:5173
+#   backend   http://localhost:8000/docs
+# Демо-аккаунты: demo@example.com / DemoPass123
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shag
+      POSTGRES_PASSWORD: shag
+      POSTGRES_DB: shag
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shag"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      APP_ENV: dev
+      DATABASE_URL: postgresql+psycopg://shag:shag@db:5432/shag
+      CORS_ORIGINS: '["http://localhost:5173"]'
+      SECRET_KEY: local-dev-secret-change-me
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+    # миграции и демо-данные (повторный запуск безопасен), затем сервер
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.seed --demo &&
+             fastapi run app/main.py --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
