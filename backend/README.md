@@ -10,7 +10,7 @@ uv run alembic upgrade head
 uv run python -m app.seed
 uv run python -m app.seed --demo
 uv run fastapi dev app/main.py      # http://localhost:8000/docs
-uv run pytest
+TEST_DATABASE_URL=postgresql+psycopg://shag:shag@localhost:5544/shag_test uv run pytest   # база *_test
 uv run ruff check . && uv run ruff format .
 ```
 
