@@ -2,6 +2,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import Select, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import UNAUTHORIZED_RESPONSE, CurrentUser, OptionalUser
@@ -12,6 +13,7 @@ from app.models.user import Purchase, User
 from app.schemas.course import CourseDetailRead, CourseRead, LessonPreview
 from app.schemas.topic import TopicRead
 from app.schemas.user import UserRead
+from app.services.payment import PaymentAdapter, get_payment_adapter
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
@@ -154,7 +156,10 @@ def get_course(
     },
 )
 def purchase_course(
-    course_id: str, user: CurrentUser, db: Annotated[Session, Depends(get_db)]
+    course_id: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+    payment_adapter: Annotated[PaymentAdapter, Depends(get_payment_adapter)],
 ) -> UserRead:
     course = db.get(Course, course_id)
     if course is None:
@@ -162,8 +167,18 @@ def purchase_course(
     if course.price == 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Этот курс бесплатный")
 
-    # Деньги не списываются: курс просто открывается в аккаунте. Повторная покупка ничего не меняет
     if all(p.course_id != course_id for p in user.purchases):
-        user.purchases.append(Purchase(user_id=user.id, course_id=course_id))
+        payment_adapter.charge(
+            user_id=user.id,
+            course_id=course.id,
+            amount=course.price,
+            idempotency_key=f"course-purchase:{user.id}:{course.id}",
+        )
+        db.execute(
+            pg_insert(Purchase)
+            .values(user_id=user.id, course_id=course_id)
+            .on_conflict_do_nothing(index_elements=[Purchase.user_id, Purchase.course_id])
+        )
         db.commit()
+        db.expire(user, ["purchases"])
     return UserRead.from_user(user)
