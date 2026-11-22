@@ -6,8 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
+from app.models.auth import RevokedToken
 from app.models.user import User
-from app.security import decode_access_token
+from app.security import decode_access_token, hash_access_token
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -26,11 +27,16 @@ def get_optional_user(
 ) -> User | None:
     if credentials is None:
         return None
-    user_id = decode_access_token(credentials.credentials)
-    if user_id is None:
+    token = credentials.credentials
+    claims = decode_access_token(token)
+    if claims is None:
         raise _unauthorized("Недействительный токен")
-    user = db.scalar(select(User).where(User.id == user_id).options(selectinload(User.purchases)))
-    if user is None:
+    if db.get(RevokedToken, hash_access_token(token)) is not None:
+        raise _unauthorized("Недействительный токен")
+    user = db.scalar(
+        select(User).where(User.id == claims.user_id).options(selectinload(User.purchases))
+    )
+    if user is None or user.token_version != claims.token_version:
         raise _unauthorized("Недействительный токен")
     return user
 
