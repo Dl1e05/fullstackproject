@@ -1,6 +1,6 @@
 # Шаг — frontend
 
-PWA-сайт для обучения «по шагу в день»: каталог бесплатных и премиум-курсов, уроки с кратким конспектом и практикой, итоговые тесты, раздел «Моё обучение», вход и регистрация, профиль. Прогресс сохраняется в браузере, сайт можно установить на телефон как приложение и открыть без интернета.
+PWA-сайт для обучения "по шагу в день": каталог бесплатных и премиум-курсов, уроки с кратким конспектом и практикой, итоговые тесты, раздел "Моё обучение", вход и регистрация, профиль. Прогресс гостя сохраняется в браузере, а прогресс аккаунта хранится на backend. Статику можно открыть офлайн; для аккаунтных данных нужно подключение.
 
 **Демо:** _ссылка после деплоя_
 
@@ -36,6 +36,7 @@ npm run preview   # проверка собранной версии с service 
 | `/learning` | Моё обучение: «В процессе», «Избранное», «Завершённые» (`?tab=saved`, `?tab=done`) |
 | `/profile` | Профиль: вход/выход, имя, мои покупки, статистика, установка приложения, сброс прогресса |
 | `/login`, `/register` | Открывают окно входа или регистрации поверх главной |
+| `/reset-password?token=...` | Установка нового пароля по ссылке восстановления |
 | `/offline` | Состояние «нет сети» |
 | `*` | 404 |
 
@@ -47,13 +48,13 @@ npm run preview   # проверка собранной версии с service 
 src/
   components/   Button, CourseCard, CourseCover, ProgressBar, LessonListItem, Tabs/Chip,
                 SearchInput, EmptyState, QuizOption, InfoBox, InstallBanner, OfflineBanner,
-                Loader (Loader/ErrorState/AsyncView), Navbar, TabBar, Footer, Logo, Icon,
-                Modal, AuthModal (вход/регистрация), PurchaseModal, Paywall
+                Loader (Loader/ErrorState/AsyncView), ProgressStatus, Navbar, TabBar, Footer, Logo, Icon,
+                Modal, AuthModal (вход/регистрация/восстановление), PurchaseModal, Paywall
   layouts/      MainLayout, LessonLayout
-  pages/        Home, Catalog, Course, Lesson, Quiz, Learning, Profile, Offline, NotFound
+  pages/        Home, Catalog, Course, Lesson, Quiz, Learning, Profile, ResetPassword, Offline, NotFound
   data/         topics.js, courses.js, lessons.js, exercises.js
-  services/     api.js — все запросы к данным (Promise с задержкой)
-  hooks/        useProgress (Context + localStorage), useAuth (аккаунт, окна входа и покупки),
+  services/     api.js - HTTP-запросы к backend
+  hooks/        useProgress (account API + guest localStorage), useAuth (аккаунт, окна входа и покупки),
                 useAsync, useInstallPrompt, useOnline
   utils/        validation.js — проверки почты, пароля и имени
   styles/       tokens.css, global.css, components.css, pages.css
@@ -64,24 +65,30 @@ scripts/        генератор иконок
 
 ## Данные и API
 
-Сущности: `Topic`, `Course`, `Lesson`, `Exercise` + `AnswerOption`. Функции `api.js` возвращают Promise с задержкой 250–550 мс, поэтому на страницах есть состояния загрузки и ошибки. Правильные ответы не отдаются вместе с вопросами — их проверяет `submitAttempt()`, как будет делать сервер.
+Сущности: `Topic`, `Course`, `Lesson`, `Exercise` + `AnswerOption`. `api.js` обращается к FastAPI и передает состояние загрузки и ошибки страницам. Правильные ответы не отдаются вместе с вопросами - их проверяет `submitAttempt()`.
 
-| Функция | Будущий эндпоинт FastAPI |
+| Функция | Эндпоинт FastAPI |
 | --- | --- |
 | `getTopics()` | `GET /topics` |
 | `getCourses({ q, topic })` | `GET /courses?q=&topic=` |
 | `getCourse(id)` | `GET /courses/{id}` |
-| `getLesson(courseId, lessonId)` | `GET /lessons/{id}` |
+| `getLesson(courseId, lessonId)` | `GET /courses/{courseId}/lessons/{lessonId}` |
 | `getQuiz(courseId)` | `GET /courses/{id}/quiz` |
 | `submitAttempt(exerciseId, optionId)` | `POST /exercises/{id}/attempts` |
 | `register({ name, email, password })` | `POST /auth/register` |
 | `login({ email, password })` / `logout()` | `POST /auth/login`, `POST /auth/logout` |
 | `getCurrentUser()` / `updateUser({ name })` | `GET /users/me`, `PATCH /users/me` |
 | `purchaseCourse(courseId)` | `POST /courses/{id}/purchase` |
+| `getProgress()` / `getProgressStats()` | `GET /users/me/progress`, `GET /users/me/stats` |
+| `completeLesson(courseId, lessonId)` / `visitLesson(courseId, lessonId)` | `PUT /courses/{courseId}/lessons/{lessonId}/completion`, `PUT /courses/{courseId}/lessons/{lessonId}/visit` |
+| `setCourseSaved(courseId, saved)` / `resetProgress()` | `PUT` or `DELETE /users/me/saved/{courseId}`, `DELETE /users/me/progress` |
+| `submitQuizAttempt(courseId, answers, clientAttemptId)` | `POST /courses/{id}/quiz/attempts` |
+| `getQuizAttempts(courseId, { limit, offset })` | `GET /courses/{id}/quiz/attempts?limit=&offset=` |
+| `forgotPassword({ email })` / `resetPassword({ token, password })` | `POST /auth/forgot-password`, `POST /auth/reset-password` |
 
-Чтобы подключить бэкенд, достаточно заменить тела функций в `api.js` на `fetch(...)`.
+Адрес API задается через `VITE_API_URL`. Токен аккаунта хранится в `localStorage` и отправляется в заголовке `Authorization`.
 
-Прогресс (пройденные уроки, последний урок, избранное, результаты тестов, профиль) хранится в `localStorage` под ключом `shag:progress:v1` и сохраняется после повторного открытия.
+Гостевой прогресс хранится в `localStorage` отдельно от аккаунтов. Прогресс, избранное, история тестов и статистика вошедшего пользователя загружаются с backend. Гостевые данные не объединяются с аккаунтом при входе. Для работы с аккаунтом требуется сеть; очередь офлайн-синхронизации не предусмотрена.
 
 Контент: 11 курсов, 3–5 уроков в каждом, практика к каждому уроку и тест на 3–4 вопроса.
 
@@ -92,11 +99,12 @@ scripts/        генератор иконок
 
 - Окно входа и регистрации (`AuthModal`) открывается из шапки, профиля, по ссылкам `/login` и `/register` и при попытке купить курс. На телефоне оно выезжает снизу.
 - Проверки (`src/utils/validation.js`), ошибки показываются под полем после ухода с него и при отправке:
-  - почта: формат адреса, латиница, без пробелов, только домены `gmail.com`, `mail.ru`, `inbox.ru`, `list.ru`, `bk.ru`, `yandex.ru`, `ya.ru`, `icloud.com`, `outlook.com`; на частые опечатки (`gmial.com`, `mail.com`…) — подсказка «Возможно, вы имели в виду …»;
-  - пароль: от 8 символов, есть латинская буква и цифра, без пробелов и русских букв, не из списка самых простых; требования видны списком с галочками;
+  - почта: базовая проверка формата, латиница и отсутствие пробелов; домены не ограничены списком;
+  - пароль: от 8 до 128 символов, есть латинская буква и цифра, без пробелов и русских букв, не из списка самых простых; требования видны списком с отметками;
   - повтор пароля должен совпадать, имя — от 2 букв.
 - Ошибки «сервера»: почта уже зарегистрирована, неверная почта или пароль.
-- Аккаунты хранятся в `localStorage` (`shag:users`), пароль — только в виде SHA-256-хэша. Это заглушка до FastAPI: на сервере проверки нужно повторить.
+- Аккаунты и проверка пароля обслуживаются backend. Токен сессии хранится в браузере; пароли не сохраняются в frontend.
+- Форма восстановления отправляет запрос на `/auth/forgot-password` и показывает одинаковое подтверждение для любого адреса. Доставка писем пока не настроена. Маршрут `/reset-password?token=...` принимает одноразовую ссылку, а после смены пароля завершает текущую сессию.
 - В платном курсе первый урок открыт как пробный. Остальные уроки и тест показывают экран «Доступно после покупки» (`Paywall`), содержимое закрытых уроков `api.js` не отдаёт.
 - Покупка (`PurchaseModal`) — демо: деньги не списываются, данные карты не запрашиваются, курс просто добавляется в аккаунт. Гостя сначала попросят войти или зарегистрироваться, затем сразу откроется оплата.
 
@@ -109,7 +117,7 @@ scripts/        генератор иконок
 ## PWA
 
 - `manifest.webmanifest`: название, иконки 192/512 и maskable, `theme_color #176b52`, `display: standalone`
-- Service worker кэширует всю статику и шрифты, навигация офлайн отдаёт `index.html` — уроки и прогресс работают без сети
+- Service worker кэширует статику и шрифты, навигация офлайн отдаёт `index.html`; запросы к backend, аккаунтный прогресс и отправка тестов требуют сети
 - Кнопка «Установить» через событие `beforeinstallprompt` (Chrome, Edge, Android), для iOS — подсказка «Поделиться → На экран „Домой“»
 - При потере сети показывается баннер, есть страница `/offline`
 
@@ -140,8 +148,8 @@ _Добавить: `docs/desktop.png`, `docs/mobile.png`_
 
 ## Планы
 
-- Бэкенд на FastAPI и замена mock-данных
-- Авторизация на сервере, восстановление пароля, синхронизация прогресса между устройствами
+- Настроить доставку писем для восстановления пароля
+- Синхронизация гостевого прогресса после входа не выполняется
 - Настоящая оплата через платёжного провайдера (ЮKassa, Stripe и т. п.)
 - Страница помощи `/help`
 - Настоящие видео в уроках
