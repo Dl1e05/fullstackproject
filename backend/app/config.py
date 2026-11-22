@@ -19,9 +19,15 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int
 
     @model_validator(mode="after")
-    def _forbid_default_secret_outside_dev(self) -> Self:
-        if self.app_env != "dev" and self.secret_key == DEFAULT_SECRET_KEY:
-            raise ValueError("SECRET_KEY must be set when APP_ENV is not 'dev'")
+    def _validate_security_settings(self) -> Self:
+        if self.access_token_expire_minutes <= 0:
+            raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES must be positive")
+        if not self.secret_key.strip():
+            raise ValueError("SECRET_KEY must not be empty")
+        if self.app_env != "dev" and (
+            self.secret_key == DEFAULT_SECRET_KEY or len(self.secret_key.strip()) < 32
+        ):
+            raise ValueError("SECRET_KEY must be at least 32 characters outside dev")
         return self
 
 
