@@ -52,7 +52,6 @@ src/
                 Modal, AuthModal (вход/регистрация/восстановление), PurchaseModal, Paywall
   layouts/      MainLayout, LessonLayout
   pages/        Home, Catalog, Course, Lesson, Quiz, Learning, Profile, ResetPassword, Offline, NotFound
-  data/         topics.js, courses.js, lessons.js, exercises.js
   services/     api.js - HTTP-запросы к backend
   hooks/        useProgress (account API + guest localStorage), useAuth (аккаунт, окна входа и покупки),
                 useAsync, useInstallPrompt, useOnline
